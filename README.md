@@ -71,18 +71,26 @@ This will:
 
 ---
 
-### Optional parameters
+### Command-line options
 
-You can modify parameters directly in the header of `explorae.py` if needed:
+| Option        | Default   | Description |
+|---------------|-----------|-------------|
+| `--pae FLOAT` | `10`      | PAE cutoff (Å) used for ipSAE computation |
+| `--dist FLOAT`| `10`      | Distance cutoff (Å) for defining contacts in ipSAE |
+| `--id-col STR`| `"jobs"`  | Column name in the Excel file used to match interaction IDs |
+| `--sheet S`   | `0`       | Excel sheet index (`0`, `1`, …) or sheet name (e.g. `"Sheet1"`) |
 
-| Parameter | Default | Description |
-|------------|----------|-------------|
-| `PAE_CUTOFF` | `10` | Cutoff value (Å) for PAE filtering |
-| `DIST_CUTOFF` | `10` | Cutoff distance (Å) for contact filtering |
-| `ID_COL` | `"jobs"` | Column name in the Excel file used to match interaction IDs |
-| `SHEET` | `0` | Excel sheet index (0 = first sheet) |
+Examples:
 
----
+```bash
+# Change only PAE cutoff
+python ./src/explorae.py ./test.xlsx ./interactions --pae 8
+
+# Change PAE and distance cutoffs
+python ./src/explorae.py ./test.xlsx ./interactions --pae 12 --dist 6
+
+# Use a different Excel sheet and ID column
+python ./src/explorae.py ./test.xlsx ./interactions --sheet AlphaPulldown --id-col Interaction_ID
 
 ### Example output
 

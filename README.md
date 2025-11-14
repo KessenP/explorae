@@ -92,17 +92,16 @@ python ./src/explorae.py ./test.xlsx ./interactions --pae 12 --dist 6
 # Use a different Excel sheet and ID column
 python ./src/explorae.py ./test.xlsx ./interactions --sheet AlphaPulldown --id-col Interaction_ID
 
+```
 ### Example output
 
 Console output example:
 
-```
 === A0A3Q7E6L3_SOLLC_and_RdRPL ===
 ipSAE   : 0.035683
 pDockQ2 : 0.147800
 PRODIGY Kd (M): 1.23e-06
 [OK] Excel mis à jour (2 lignes, 0 manquantes)
-```
 
 ---
 

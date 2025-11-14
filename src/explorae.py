@@ -6,6 +6,8 @@ import sys, json, re, shlex, subprocess, shutil, os
 from pathlib import Path
 from typing import Optional, Dict, Tuple, List
 import pandas as pd
+import argparse
+
 
 # ---------- CONFIG MODIFIABLE ----------
 ID_COL = "jobs"         # colonne d'ID dans l'Excel (doit matcher le nom des dossiers)
@@ -14,9 +16,8 @@ PAE_CUTOFF  = 10
 DIST_CUTOFF = 10
 IPSae_SCRIPT = Path(__file__).resolve().parent / "ipsae.py"
 PRODIGY_CMD = [sys.executable, str((Path(__file__).parent / "cli.py").resolve()), "--showall"]
-
-
 # --------------------------------------
+
 
 COL_IPSAE   = "ipsae"
 COL_PDOCKQ2 = "pdockq2"
@@ -162,17 +163,76 @@ def update_excel_write_safe(excel: Path, sheet, id_col: str, updates: Dict[str, 
             f"Ferme '{excel.name}' et relance. Un export a été écrit ici: {tmp_path}"
         )
 
-def main():
-    if len(sys.argv) < 3:
-        print("Usage: python explorae.py <excel_path.xlsx> <interactions_root_dir>")
-        sys.exit(2)
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="EXPLORAE: enrich AlphaFold-Multimer interaction models with ipSAE, pDockQ2, and PRODIGY Kd, then update a master Excel file."
+    )
+    parser.add_argument(
+        "excel",
+        help="Path to the master Excel file (e.g. master.xlsx)"
+    )
+    parser.add_argument(
+        "interactions_root",
+        help="Root directory containing one folder per interaction (each with ranking_debug.json, unrelaxed_*.pdb, result_*.pkl, etc.)"
+    )
+    parser.add_argument(
+        "--pae",
+        type=float,
+        default=PAE_CUTOFF,
+        help=f"PAE cutoff (Å) for ipSAE (default: {PAE_CUTOFF})"
+    )
+    parser.add_argument(
+        "--dist",
+        type=float,
+        default=DIST_CUTOFF,
+        help=f"Distance cutoff (Å) for contact definition in ipSAE (default: {DIST_CUTOFF})"
+    )
+    parser.add_argument(
+        "--id-col",
+        default=ID_COL,
+        help=f"Column name in Excel used as interaction ID (default: '{ID_COL}')"
+    )
+    parser.add_argument(
+        "--sheet",
+        default=str(SHEET),
+        help=(
+            f"Excel sheet index or name (default: {SHEET}). "
+            "Use an integer index (0,1,2,...) or a sheet name like 'Sheet1'."
+        )
+    )
+    return parser.parse_args()
 
-    excel = Path(sys.argv[1]).resolve()
-    root  = Path(sys.argv[2]).resolve()
+def main():
+    args = parse_args()
+
+    # On résout les chemins
+    excel = Path(args.excel).resolve()
+    root  = Path(args.interactions_root).resolve()
+
     if not excel.exists():
         sys.exit(f"[ERROR] Excel introuvable: {excel}")
     if not root.exists():
         sys.exit(f"[ERROR] Dossier interactions introuvable: {root}")
+
+    # On met à jour les globals avec les valeurs éventuellement overridées
+    global PAE_CUTOFF, DIST_CUTOFF, ID_COL, SHEET
+    PAE_CUTOFF = args.pae
+    DIST_CUTOFF = args.dist
+    ID_COL = args.id_col
+
+    # sheet : si l'utilisateur donne un entier -> index, sinon nom
+    sheet_arg = args.sheet
+    if isinstance(sheet_arg, str) and sheet_arg.isdigit():
+        SHEET = int(sheet_arg)
+    else:
+        SHEET = sheet_arg  # peut être str (nom d’onglet) ou déjà int
+
+    log(f"[INFO] Excel        : {excel}")
+    log(f"[INFO] Interactions : {root}")
+    log(f"[INFO] SHEET        : {SHEET}")
+    log(f"[INFO] ID_COL       : {ID_COL}")
+    log(f"[INFO] PAE_CUTOFF   : {PAE_CUTOFF}")
+    log(f"[INFO] DIST_CUTOFF  : {DIST_CUTOFF}")
 
     updates: Dict[str, Dict[str, Optional[float]]] = {}
 
@@ -196,9 +256,14 @@ def main():
         if pdq2_val  is not None: log(f"pDockQ2 : {pdq2_val:.6f}")
         if kd_val    is not None: log(f"PRODIGY Kd (M): {kd_val:.3e}")
 
-        updates[inter_id] = {COL_IPSAE: ipsae_val, COL_PDOCKQ2: pdq2_val, COL_PRODIGY: kd_val}
+        updates[inter_id] = {
+            COL_IPSAE:   ipsae_val,
+            COL_PDOCKQ2: pdq2_val,
+            COL_PRODIGY: kd_val
+        }
 
     update_excel_write_safe(excel, SHEET, ID_COL, updates)
+
 
 if __name__ == "__main__":
     main()

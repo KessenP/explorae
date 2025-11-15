@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Optional, Dict, Tuple, List
 import pandas as pd
 import argparse
-
+#import pyrosetta
+#from pyrosetta import pose_from_pdb, get_fa_scorefxn
 
 # ---------- CONFIG MODIFIABLE ----------
 ID_COL = "jobs"         # colonne d'ID dans l'Excel (doit matcher le nom des dossiers)
@@ -22,20 +23,32 @@ PRODIGY_CMD = [sys.executable, str((Path(__file__).parent / "cli.py").resolve())
 COL_IPSAE   = "ipsae"
 COL_PDOCKQ2 = "pdockq2"
 COL_PRODIGY = "prodigy_kd"
+COL_IPTM_PTM = "ipTM+pTM"
+COL_PTM = "pTM"
+COL_REF2015 = "REF2015"
 
 def log(m: str): print(m, flush=True)
 
-def best_model_from_ranking(dirpath: Path) -> Optional[str]:
+def parse_debug_file(dirpath: Path) -> Optional[str]:
     f = dirpath / "ranking_debug.json"
+    debug_data={}
     if not f.exists():
         return None
     data = json.loads(f.read_text())
     order = data.get("order") or []
-    return order[0] if order else None
+    if order:
+        best_model=order[0]
+        iptm_ptm=data.get("iptm+ptm")[best_model]
+        iptm=data.get("iptm")[best_model]
+        debug_data={'model':best_model, 'iptm+ptm':iptm_ptm, 'iptm':iptm}
+    return debug_data if order else None
 
 def expected_files(dirpath: Path, top_model: str) -> Tuple[Path, Path]:
+    
     pdb = dirpath / f"unrelaxed_{top_model}.pdb"
     pkl = dirpath / f"result_{top_model}.pkl"
+    #pdb = os.path.join(dirpath, f"unrelaxed_{top_model}.pdb")
+    #pkl = os.path.join(dirpath, f"result_{top_model}.pkl")
     return pdb, pkl
 
 def run_ipsae(pae_pkl: Path, pdb: Path, workdir: Path) -> Tuple[Optional[float], Optional[float]]:
@@ -202,6 +215,44 @@ def parse_args():
     )
     return parser.parse_args()
 
+def dico_to_csv(dataset, filepath):
+
+   
+    # Convertir en DataFrame
+    df = pd.DataFrame.from_dict(dataset, orient='index')
+
+    # Ajouter une colonne pour les clés si nécessaire
+    df.index.name = 'id'
+
+    print("dataset is:", df)
+
+    # Sauvegarder en CSV
+    df.to_csv(filepath, encoding='utf-8')
+
+def calculate_ref2015_energy_terms(pdb_path):
+    """
+    Calculate REF2015 energy terms for a given PDB file.
+    
+    Args:
+        pdb_path (str): Path to the PDB file.
+    
+    Returns:
+        float total score value
+    """
+    # Initialize PyRosetta if not already done
+    pyrosetta.init()
+    
+    # Load the pose from PDB
+    pose = pose_from_pdb(pdb_path)
+    
+    # Set up the REF2015 scoring function
+    scorefxn = get_fa_scorefxn()  # Default is REF2015 in PyRosetta
+    
+    # Score the pose
+    total_score = scorefxn(pose)
+    
+    return total_score
+
 def main():
     args = parse_args()
 
@@ -209,8 +260,8 @@ def main():
     excel = Path(args.excel).resolve()
     root  = Path(args.interactions_root).resolve()
 
-    if not excel.exists():
-        sys.exit(f"[ERROR] Excel introuvable: {excel}")
+    #if not excel.exists():
+    #    sys.exit(f"[ERROR] Excel introuvable: {excel}")
     if not root.exists():
         sys.exit(f"[ERROR] Dossier interactions introuvable: {root}")
 
@@ -236,34 +287,54 @@ def main():
 
     updates: Dict[str, Dict[str, Optional[float]]] = {}
 
+
     for inter_dir in sorted([p for p in root.iterdir() if p.is_dir()]):
         inter_id = inter_dir.name
         log(f"\n=== {inter_id} ===")
-        top = best_model_from_ranking(inter_dir)
+        debug_data = parse_debug_file(inter_dir)
+        #debug_data={'model':best_model, 'iptm+ptm':iptm_ptm, 'iptm':iptm}
+
+        top=debug_data['model']
         if not top:
             log("[WARN] ranking_debug.json absent ou sans 'order' -> skip")
             continue
 
         pdb, pkl = expected_files(inter_dir, top)
         if not pdb.exists() or not pkl.exists():
+        #if (not pdb or not pkl):
             log(f"[WARN] Fichiers manquants pour {top}: pdb={pdb.exists()} pkl={pkl.exists()} -> skip")
+            #log(f"[WARN] Fichiers manquants pour {top}: pdb={pdb} pkl={pkl} -> skip")
             continue
 
         ipsae_val, pdq2_val = run_ipsae(pkl, pdb, inter_dir)
         kd_val = run_prodigy(pdb)
 
+        # calculate_ref2015_energy_terms attend une string
+        #ref2015=calculate_ref2015_energy_terms(str(pdb))
+
         if ipsae_val is not None: log(f"ipSAE   : {ipsae_val:.6f}")
         if pdq2_val  is not None: log(f"pDockQ2 : {pdq2_val:.6f}")
         if kd_val    is not None: log(f"PRODIGY Kd (M): {kd_val:.3e}")
+        if debug_data['iptm+ptm']    is not None: log(f"iptm+ptm: {debug_data['iptm+ptm']:.3e}")
+        if debug_data['iptm']     is not None: log(f"iptm : {debug_data['iptm'] :.3e}")
+        #if ref2015 is not None: log(f"ref2015 (kJ/mol): {ref2015:.3e}")
 
+        # rajouter pyrosetta -p en argument , ipTM et ipTM+pTM
         updates[inter_id] = {
             COL_IPSAE:   ipsae_val,
             COL_PDOCKQ2: pdq2_val,
-            COL_PRODIGY: kd_val
+            COL_PRODIGY: kd_val,
+            COL_IPTM_PTM: debug_data['iptm+ptm'], 
+            COL_PTM : debug_data['iptm'],
+            #COL_REF2015 : ref2015 
         }
 
-    update_excel_write_safe(excel, SHEET, ID_COL, updates)
+    #update_excel_write_safe(excel, SHEET, ID_COL, updates)
+    #with open("../data/interactions_negatives.json", "w", encoding="utf-8") as f:
+    #    json.dump(updates, f)
 
+    # write to csv file
+    dico_to_csv(updates, excel)
 
 if __name__ == "__main__":
     main()

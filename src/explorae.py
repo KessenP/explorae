@@ -7,8 +7,14 @@ from pathlib import Path
 from typing import Optional, Dict, Tuple, List
 import pandas as pd
 import argparse
-#import pyrosetta
+
+import pyrosetta
+from pyrosetta import pose_from_pdb
+from pyrosetta import *
+from pyrosetta.rosetta.protocols.analysis import InterfaceAnalyzerMover
+
 #from pyrosetta import pose_from_pdb, get_fa_scorefxn
+
 
 # ---------- CONFIG MODIFIABLE ----------
 ID_COL = "jobs"         # colonne d'ID dans l'Excel (doit matcher le nom des dossiers)
@@ -26,6 +32,7 @@ COL_PRODIGY = "prodigy_kd"
 COL_IPTM_PTM = "ipTM+pTM"
 COL_PTM = "pTM"
 COL_REF2015 = "REF2015"
+COL_dG_SASA_ratio = "dG_SASA_ratio"
 
 def log(m: str): print(m, flush=True)
 
@@ -253,7 +260,56 @@ def calculate_ref2015_energy_terms(pdb_path):
     
     return total_score
 
+
+
+def analyze_interface(pdb_file, chains_partner1, chains_partner2):
+    """
+    Analyse l'interface entre deux ensembles de chaînes dans un complexe.
+    
+    Arguments :
+        pdb_file (str) : chemin vers le fichier PDB
+        chains_partner1 (str) : ex. "A" ou "AHL"
+        chains_partner2 (str) : ex. "B" ou "CD"
+    
+    Retourne :
+        dict : métriques calculées (dSASA, dG, dG_norm)
+    """
+
+    # Initialize PyRosetta if not already done
+    #pyrosetta.init()
+
+    # Charger la pose
+    pose = pose_from_pdb(pdb_file)
+
+    # Format Rosetta attendu : "A_B" ou "AHL_CD"
+    interface_str = f"{chains_partner1}_{chains_partner2}"
+
+    # Lancer l'analyse
+    iam = InterfaceAnalyzerMover(interface_str, False)
+    iam.apply(pose)
+
+    # Extraction des valeurs stockées dans la pose
+    scores = pose.scores
+
+     # Les noms corrects dans ta version de Rosetta
+    dG = scores.get("dG_cross", None) # énergie de liaison
+    dSASA = scores.get("dSASA_int", None) # dSASA enterrée
+
+    # Normalisation
+    dG_norm = dG / dSASA if (dG is not None and dSASA not in (0, None)) else None
+
+    return {
+        "interface": interface_str,
+        "dG": dG,
+        "dSASA": dSASA,
+        "dG_norm": dG_norm
+    }
+
+
 def main():
+    # Initialize PyRosetta if not already done
+    pyrosetta.init()
+
     args = parse_args()
 
     # On résout les chemins
@@ -287,6 +343,7 @@ def main():
 
     updates: Dict[str, Dict[str, Optional[float]]] = {}
 
+    
 
     for inter_dir in sorted([p for p in root.iterdir() if p.is_dir()]):
         inter_id = inter_dir.name
@@ -309,28 +366,29 @@ def main():
         ipsae_val, pdq2_val = run_ipsae(pkl, pdb, inter_dir)
         kd_val = run_prodigy(pdb)
 
-        # calculate_ref2015_energy_terms attend une string
-        #ref2015=calculate_ref2015_energy_terms(str(pdb))
+        # calculate_interface_dG_dSASA_ratio attend une string
+        # in our case, chains interacting are B and C
+        dG_SASA_results=analyze_interface(str(pdb), "B", "C")
 
         if ipsae_val is not None: log(f"ipSAE   : {ipsae_val:.6f}")
         if pdq2_val  is not None: log(f"pDockQ2 : {pdq2_val:.6f}")
         if kd_val    is not None: log(f"PRODIGY Kd (M): {kd_val:.3e}")
         if debug_data['iptm+ptm']    is not None: log(f"iptm+ptm: {debug_data['iptm+ptm']:.3e}")
         if debug_data['iptm']     is not None: log(f"iptm : {debug_data['iptm'] :.3e}")
-        #if ref2015 is not None: log(f"ref2015 (kJ/mol): {ref2015:.3e}")
+        if dG_SASA_results["dG_norm"] is not None: log(f"dG_SASA_ratio (kJ/A): {dG_SASA_results["dG_norm"]:.3e}")
 
-        # rajouter pyrosetta -p en argument , ipTM et ipTM+pTM
+        
         updates[inter_id] = {
             COL_IPSAE:   ipsae_val,
             COL_PDOCKQ2: pdq2_val,
             COL_PRODIGY: kd_val,
             COL_IPTM_PTM: debug_data['iptm+ptm'], 
             COL_PTM : debug_data['iptm'],
-            #COL_REF2015 : ref2015 
+            COL_dG_SASA_ratio : dG_SASA_results["dG_norm"]
         }
 
     #update_excel_write_safe(excel, SHEET, ID_COL, updates)
-    #with open("../data/interactions_negatives.json", "w", encoding="utf-8") as f:
+    #with open("data/interactions_négatives.json", "w", encoding="utf-8") as f:
     #    json.dump(updates, f)
 
     # write to csv file

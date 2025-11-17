@@ -15,6 +15,19 @@ cd explorae
 python -m venv venv
 source venv/bin/activate      # (or: venv\Scripts\activate on Windows)
 pip install -r requirements.txt
+
+# add pyrosetta channels
+conda config --show-sources # to find .conda file
+Modify  .conda file:
+
+add sources to channels list:
+  - https://conda.rosettacommons.org
+  - conda-forge
+
+# install pyrosetta 
+conda install pyrosetta
+
+
 ```
 
 ---

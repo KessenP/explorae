@@ -16,12 +16,10 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
 - What they measure:
   - ipSAE: an interface-centric transform of AlphaFold Predicted Aligned Error (PAE). It uses a PTM‑like transform to convert PAE values into a 0–1 confidence per residue pair and aggregates them to give an interface confidence score.
   - pDockQ2: a data‑driven interface correctness score combining local confidence (pLDDT) and transformed PAE; mapped through an empirically fitted logistic function.
-  - ipTM: an interface TM‑score proxy derived from PAE using the ptm transformation used by ipSAE/pTM proxies.
-  - pTM: AlphaFold’s predicted TM (global confidence) as produced by the AlphaFold pipeline.
 - Statistical/physical/confidence-based:
   - ipSAE: confidence‑based (derived from predicted errors, empirical transform).
   
-  
+
   ---
 
   ## Table des métriques (rapide)
@@ -45,7 +43,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
 
   ### AlphaFold (confiance)
   - ipSAE : transforme la matrice PAE pour donner une confiance locale sur l'interface. C'est adimensionnel et entre 0 et 1 (plus grand = meilleur).
-  - pDockQ2 : combine pLDDT local (confiance) et PAE transformé puis passe par une fonction logistique (score empirique).
+  - pDockQ2 : combine pLDDT local (confiance) et PAE transformé.
   - ipTM / pTM : mesures de type TM issues des sorties AlphaFold (ici on lit `ranking_debug.json` pour `iptm` et `iptm+ptm`).
 
   Ces métriques sont basées sur la confiance / erreurs prédites par AlphaFold.
@@ -53,8 +51,6 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
   ### PRODIGY
   - PRODIGY calcule d'abord un `ΔG` empirique (appelé `ba_val`) via un modèle linéaire sur les contacts et la composition d'interface. Cette valeur est en kcal/mol.
   - Ensuite, `Kd` est dérivé par la relation utilisée dans le code : `kd = exp(ΔG / (R*T))` (R en kcal·mol⁻1·K⁻1). Inversement `ΔG = R*T*ln(Kd)`.
-
-  PRODIGY est un modèle statistique / empirique — il prédit une énergie basée sur des features, pas une évaluation physique complète.
 
   ### Rosetta (PyRosetta)
   - `dG_cross` : score d'interface renvoyé par `InterfaceAnalyzerMover` (unités REU = Rosetta Energy Units).

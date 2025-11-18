@@ -8,29 +8,6 @@ EXPLORAE computes, aggregates and exports multiple structural‑confidence, biop
 
 The table below lists the metrics produced by EXPLORAE, their units, source, and short meaning. The Excel output uses the column names shown in the table; units are reported in the table and are the canonical units for each metric.
 
-| Metric | Unit | Source | Meaning |
-|--------|------|--------|---------|
-| ipSAE | dimensionless | AlphaFold (PAE → transform) | Interface confidence |
-| pDockQ2 | dimensionless | AF + logistic regression | Interface correctness score |
-| ipTM | dimensionless | AlphaFold | Interface TM-score |
-| pTM | dimensionless | AlphaFold | Global TM-score |
-| ipTM+pTM | dimensionless | AlphaFold | Combined ranking score |
-| PRODIGY Kd | M | PRODIGY | Predicted dissociation constant |
-| PRODIGY ΔG internal | kcal/mol | PRODIGY | Binding free energy |
-| Rosetta dG_cross | REU | Rosetta | Interface interaction energy |
-| Rosetta dSASA_int | Å² | Rosetta | Buried SASA |
-| dG_SASA_ratio | REU/Å² | Rosetta | Normalized interface energy |
-
-Excel output column names (examples used in the code):
-- `ipsae` (ipSAE, dimensionless)
-- `pdockq2` (pDockQ2, dimensionless)
-- `prodigy_kd` (PRODIGY Kd, M)
-- `prodigy_dg_internal` (PRODIGY ΔG internal, kcal/mol)
-- `dG_rosetta` (Rosetta dG_cross, REU)
-- `dG_SASA_ratio` (dG_cross / dSASA_int, REU/Å²)
-- `ipTM+pTM` (combined score)
-- `pTM` (pTM/ipTM entries)
-
 ---
 
 ## EXPLANATION OF METRICS
@@ -43,83 +20,138 @@ Excel output column names (examples used in the code):
   - pTM: AlphaFold’s predicted TM (global confidence) as produced by the AlphaFold pipeline.
 - Statistical/physical/confidence-based:
   - ipSAE: confidence‑based (derived from predicted errors, empirical transform).
-  - pDockQ2: statistical/regression (empirically fitted logistic model combining confidence and PAE features).
-  - ipTM & pTM: confidence‑based, proxies of structural correctness derived from predicted error matrices or AlphaFold outputs.
+  # EXPLORAE — petit guide (version simple)
 
-Notes on calculation (implementation in `src/ipsae.py`):
-- ptm transform: ptm_func(x, d0) = 1 / (1 + (x/d0)^2), where x is PAE and d0 is an empirically chosen scale (often a function of chain length or a fixed value).
-- ipSAE: per‑residue means of ptm_func aggregated across interface pairs, then the maximum residue value for a pair is selected and symmetrical max is used to report a pair value.
-- pDockQ2: mean Cβ‑pLDDT × mean_ptm (ptm computed with d0=10.0), then mapped by:
-  - pDockQ2 = 1.31 / (1 + exp(-0.075*(x - 84.733))) + 0.005
-  where x = mean_plddt * mean_ptm (constants from the implemented logistic fit).
+  EXPLORAE aide à extraire des métriques d'interactions entre protéines depuis des résultats AlphaFold‑Multimer, puis à les mettre dans un fichier Excel/CSV. C'est fait pour regrouper rapidement des scores de confiance et d'énergie pour chaque interaction.
 
----
+  ---
 
-### 2. PRODIGY metrics
-- What they measure:
-  - PRODIGY ΔG internal (`ba_val`): an empirically predicted binding free energy (reported in kcal/mol) produced by a linear regression over intermolecular contact counts and interface amino‑acid composition metrics.
-  - PRODIGY Kd (`kd_val`): a predicted dissociation constant (M) derived from the PRODIGY ΔG internal using the thermodynamic relation used in the code.
-- Statistical/physical/confidence-based:
-  - PRODIGY ΔG internal: statistical/regression (IC_NIS linear model).
-  - Kd: numeric transform of the regression output using standard thermodynamic relation.
-- Exact formulas (from the local implementation `src/modules/models.py` and `src/modules/utils.py`):
-  - IC_NIS linear model:
-    - ba_val = -0.09459*CC + -0.10007*AC + 0.19577*PP + -0.22671*AP + 0.18681*nis_a + 0.13810*nis_c - 15.9433
-      - CC, AC, PP, AP are counts of contact types (charged/ apolar/ polar combinations)
-      - nis_a, nis_c are % apolar and % charged NIS residues (0–100)
-      - ba_val unit: kcal/mol (reported as PRODIGY ΔG internal)
-  - Conversion to Kd (function `dg_to_kd`):
-    - temp_in_K = T(°C) + 273.15
-    - RT (kcal·mol⁻1·K⁻1) constant used: 0.0019858775
-    - kd = exp( ba_val / (RT) )
-      - Thus kd (M) = exp(ΔG / (R·T)) according to the local code.
-    - Inverse relation (thermodynamic):
-      - ΔG = RT * ln(Kd)
-    - Conversions to kJ: 1 kcal = 4.184 kJ (if needed).
-- Notes:
-  - PRODIGY ΔG is an empirical energy; kd is derived via the exponential transform. Check sign conventions (the code uses kd = exp(ΔG/RT) consistent with the implementation of dg_to_kd).
+  ## Table des métriques (rapide)
 
----
+  | Metric | Unité | Source | Sens |
+  |--------|-------|--------|------|
+  | ipSAE | adimensionnel | AlphaFold (PAE → transform) | confiance sur l'interface |
+  | pDockQ2 | adimensionnel | AF + régression | score de qualité d'interface |
+  | ipTM | adimensionnel | AlphaFold | ipTM (proxy) |
+  | pTM | adimensionnel | AlphaFold | pTM (global) |
+  | ipTM+pTM | adimensionnel | AlphaFold | score combiné pour le classement |
+  | PRODIGY Kd | M | PRODIGY | constante de dissociation prédite |
+  | PRODIGY ΔG internal | kcal/mol | PRODIGY | énergie libre prédite (empirique) |
+  | Rosetta dG_cross | REU | Rosetta (PyRosetta) | énergie d'interface (score Rosetta) |
+  | Rosetta dSASA_int | Å² | Rosetta | surface enfouie (SASA) |
+  | dG_SASA_ratio | REU/Å² | Rosetta | énergie normalisée par surface |
 
-### 3. Rosetta metrics
-- What they measure:
-  - Rosetta `dG_cross`: Rosetta’s interface energy (REU), typically computed as Score(complex) - Score(partnerA) - Score(partnerB) (empirical Rosetta energy units).
-  - Rosetta `dSASA_int`: buried solvent‑accessible surface area (Å²) at the interface.
-  - `dG_SASA_ratio`: dG_cross divided by dSASA_int (units: REU/Å²); a normalized indicator of energy per buried surface area.
-- Statistical/physical/confidence-based:
-  - Rosetta metrics are physics‑inspired empirical energy terms (force‑field based) and surface calculations; they are not strictly thermodynamic ΔG in kcal/mol and are best interpreted relatively (REU).
-- Calculation notes (as used by `explorae.py`):
-  - The code uses PyRosetta InterfaceAnalyzerMover:
-    - `InterfaceAnalyzerMover(interface_str, False)` applied to a `pose`.
-    - After application, `pose.scores` contains `"dG_cross"` and `"dSASA_int"`.
-  - `dG_SASA_ratio` is computed as `dG_cross / dSASA_int` if `dSASA_int` is nonzero.
-- Units:
-  - dG_cross: REU (Rosetta Energy Units) — not directly kcal/mol.
-  - dSASA_int: Å².
-  - dG_SASA_ratio: REU/Å².
+  Les noms de colonnes écrits dans l'Excel sont : `ipsae`, `pdockq2`, `prodigy_kd`, `prodigy_dg_internal`, `dG_rosetta`, `dG_SASA_ratio`, `ipTM+pTM`, `pTM`.
 
----
+  ---
 
-## INSTALLATION
+  ## Courte explication des groupes de métriques
 
-Clone the repository, create a Python virtual environment, install Python dependencies, and optionally install PyRosetta.
+  ### AlphaFold (confiance)
+  - ipSAE : transforme la matrice PAE pour donner une confiance locale sur l'interface. C'est adimensionnel et entre 0 et 1 (plus grand = meilleur).
+  - pDockQ2 : combine pLDDT local (confiance) et PAE transformé puis passe par une fonction logistique (score empirique).
+  - ipTM / pTM : mesures de type TM issues des sorties AlphaFold (ici on lit `ranking_debug.json` pour `iptm` et `iptm+ptm`).
 
-```bash
-# Clone the repo
-git clone https://github.com/adboussif/explorae.git
-cd explorae
+  Ces métriques sont basées sur la confiance / erreurs prédites par AlphaFold (donc pas des énergies physiques directes).
 
-# Create and activate a Python virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
+  ### PRODIGY
+  - PRODIGY calcule d'abord un `ΔG` empirique (appelé `ba_val`) via un modèle linéaire sur les contacts et la composition d'interface. Cette valeur est en kcal/mol.
+  - Ensuite, `Kd` est dérivé par la relation utilisée dans le code : `kd = exp(ΔG / (R*T))` (R en kcal·mol⁻1·K⁻1). Inversement `ΔG = R*T*ln(Kd)`.
 
-# Install Python requirements
-pip install --upgrade pip
-pip install -r requirements.txt
+  PRODIGY est un modèle statistique / empirique — il prédit une énergie basée sur des features, pas une évaluation physique complète.
 
-# Optional: install PyRosetta (if you plan to compute Rosetta metrics)
-# Example using conda channels (adjust depending on your provider / licenses):
-conda create -n explorae_pyro python=3.10 -y
-conda activate explorae_pyro
-# Example install (user must have access to PyRosetta channel/package):
-conda install -c rosetta -c conda-forge pyrosetta -y
+  ### Rosetta (PyRosetta)
+  - `dG_cross` : score d'interface renvoyé par `InterfaceAnalyzerMover` (unités REU = Rosetta Energy Units).
+  - `dSASA_int` : surface enfouie (Å²) calculée par Rosetta.
+  - `dG_SASA_ratio` : `dG_cross / dSASA_int` (REU/Å²), utile pour normaliser l'énergie par surface.
+
+  Ces valeurs viennent de Rosetta (score empirique, utile en comparaisons internes) — elles ne sont pas directement en kcal/mol.
+
+  ---
+
+  ## Installation rapide
+
+  ```bash
+  git clone https://github.com/adboussif/explorae.git
+  cd explorae
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -r requirements.txt
+
+  # Optionnel : si tu veux les métriques Rosetta, installe PyRosetta selon ta licence
+  ```
+
+  Remarques : PRODIGY direct (API) utilise `freesasa` et `biopython`. Si ces libs manquent, le script appellera le CLI `cli.py` et parsra la sortie.
+
+  ---
+
+  ## Usage de base
+
+  ```bash
+  python ./src/explorae.py ./test.xlsx ./interactions
+  ```
+
+  Ce que fait le script :
+  - parcourt `./interactions` (un dossier par interaction),
+  - lit `ranking_debug.json` pour retrouver le modèle top et ipTM/pTM,
+  - calcule ipSAE / pDockQ2 via `ipsae.py` (fichiers de résumé),
+  - lance PRODIGY (API directe si possible, sinon CLI + parsing),
+  - lance PyRosetta InterfaceAnalyzer si PyRosetta est installée,
+  - met à jour l'Excel/CSV en ajoutant les colonnes (ou les crée si manquantes).
+
+  ---
+
+  ## Options (principales)
+
+  | Option | Usage |
+  |--------|-------|
+  | `--pae` | seuil PAE (Å) pour ipSAE (par défaut `10`) |
+  | `--dist` | cutoff distance (Å) pour ipSAE (par défaut `10`) |
+  | `--id-col` | nom de la colonne ID dans l'Excel (par défaut `jobs`) |
+  | `--sheet` | onglet Excel (index ou nom, par défaut `0`) |
+
+  Exemple :
+  ```bash
+  python ./src/explorae.py master.xlsx ./interactions --pae 12 --dist 8 --id-col jobs --sheet 0
+  ```
+
+  ---
+
+  ## Structure du dépôt (essentiel)
+
+  ```
+  explorae/
+  ├─ src/
+  │  ├─ explorae.py    # script principal
+  │  ├─ ipsae.py       # calcule ipSAE, pDockQ2, etc.
+  │  ├─ cli.py         # wrapper PRODIGY
+  │  └─ modules/       # code utilitaire (prodigy, parsers, utils...)
+  ├─ interactions/     # mettes-y un dossier par interaction
+  └─ requirements.txt
+  ```
+
+  ---
+
+  ## Exemple de sortie console (court)
+
+  ```
+  === INTERACTION_XYZ ===
+  ipSAE   : 0.78
+  pDockQ2 : 0.41
+  PRODIGY Kd (M): 2.3e-07
+  PRODIGY ΔG internal : -8.9 kcal/mol
+  iptm+ptm: 1.10
+  pTM : 0.55
+  dG_SASA_ratio : -0.011 (REU/Å²)
+  dG Rosetta (dG_cross) : -38.5 REU
+  ```
+
+  ---
+
+  ## Notes pratiques
+  - `ranking_debug.json` doit être présent pour chaque interaction (sinon on skippe).
+  - Si le PDB ou le PKL manquent, l'interaction est ignorée (warning).
+  - Si l'Excel est ouvert, tu auras une erreur de permission — ferme-le et relance.
+  - Si PyRosetta n'est pas installée, Rosetta metrics sont sautées.
+
+  ---

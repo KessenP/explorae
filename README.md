@@ -30,11 +30,11 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
 
   | Metric | Unité | Source | Sens |
   |--------|-------|--------|------|
-  | ipSAE | adimensionnel | AlphaFold (PAE → transform) | confiance sur l'interface |
-  | pDockQ2 | adimensionnel | AF + régression | score de qualité d'interface |
-  | ipTM | adimensionnel | AlphaFold | ipTM (proxy) |
-  | pTM | adimensionnel | AlphaFold | pTM (global) |
-  | ipTM+pTM | adimensionnel | AlphaFold | score combiné pour le classement |
+  | ipSAE |  | AlphaFold (PAE → transform) | confiance sur l'interface |
+  | pDockQ2 |  | AF + régression | score de qualité d'interface |
+  | ipTM |  | AlphaFold | ipTM (proxy) |
+  | pTM |  | AlphaFold | pTM (global) |
+  | ipTM+pTM |  | AlphaFold | score combiné pour le classement |
   | PRODIGY Kd | M | PRODIGY | constante de dissociation prédite |
   | PRODIGY ΔG internal | kcal/mol | PRODIGY | énergie libre prédite (empirique) |
   | Rosetta dG_cross | REU | Rosetta (PyRosetta) | énergie d'interface (score Rosetta) |
@@ -45,7 +45,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
 
   ---
 
-  ## Courte explication des groupes de métriques
+  ## Explication des groupes de métriques
 
   ### AlphaFold (confiance)
   - ipSAE : transforme la matrice PAE pour donner une confiance locale sur l'interface. C'est adimensionnel et entre 0 et 1 (plus grand = meilleur).
@@ -78,7 +78,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
   source .venv/bin/activate
   pip install -r requirements.txt
 
-  # Optionnel : si tu veux les métriques Rosetta, installe PyRosetta selon ta licence
+  # Optionnel : si tu veux les métriques Rosetta, installe PyRosetta 
   ```
 
   Remarques : PRODIGY direct (API) utilise `freesasa` et `biopython`. Si ces libs manquent, le script appellera le CLI `cli.py` et parsra la sortie.
@@ -148,10 +148,3 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
 
   ---
 
-  ## Notes pratiques
-  - `ranking_debug.json` doit être présent pour chaque interaction (sinon on skippe).
-  - Si le PDB ou le PKL manquent, l'interaction est ignorée (warning).
-  - Si l'Excel est ouvert, tu auras une erreur de permission — ferme-le et relance.
-  - Si PyRosetta n'est pas installée, Rosetta metrics sont sautées.
-
-  ---

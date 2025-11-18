@@ -28,7 +28,7 @@ COL_IPSAE   = "ipsae"
 COL_PDOCKQ2 = "pdockq2"
 COL_PRODIGY = "prodigy_kd"
 COL_IPTM_PTM = "ipTM+pTM"
-COL_PTM = "pTM"
+COL_PTM = "ipTM"
 # COL_REF2015 = "REF2015"
 COL_dG_SASA_ratio = "dG_SASA_ratio"
 COL_PRODIGY_DG_INTERNAL = "prodigy_dg_internal"
@@ -283,7 +283,7 @@ def update_excel_write_safe(
     id_col: str,
     updates: Dict[str, Dict[str, Optional[float]]]
 ) -> None:
-    df = pd.read_excel(excel, sheet_name=sheet)
+    df = load_table_auto(excel, sheet)
 
     # Déterminer la colonne d'ID :
     # - si id_col (ex: 'jobs') existe, on l'utilise
@@ -345,9 +345,10 @@ def parse_args():
         )
     )
     parser.add_argument(
-        "excel",
-        help="Path to the master Excel file (e.g. master.xlsx)"
+    "excel",
+    help="Path to the master table file (Excel or CSV, e.g. results.xlsx or results.csv)"
     )
+
     parser.add_argument(
         "interactions_root",
         help=(
@@ -516,16 +517,26 @@ def main():
             COL_dG_SASA_ratio: dG_SASA_results["dG_norm"],
         }
 
-    update_excel_write_safe(excel, SHEET, ID_COL, updates)
-
-    # Création du CSV uniquement si l'Excel N'EXISTE PAS
     if not excel.exists():
-        csv_path = excel.with_suffix(".csv")
-        dico_to_csv(updates, csv_path)
-        log(f"CSV créé : {csv_path}")
-    else:
-        log("Tableau mis à jour")
+        log(f"[INFO] Fichier '{excel}' inexistant, création d'un nouveau tableau à partir des métriques.")
 
+        # Si l'utilisateur a donné un .csv → on écrit un CSV
+        if excel.suffix.lower() == ".csv":
+            dico_to_csv(updates, excel)
+            log(f"[OK] CSV créé : {excel}")
+            return
+
+        # Sinon → on crée un Excel
+        df = pd.DataFrame.from_dict(updates, orient="index")
+        df.index.name = ID_COL
+        with pd.ExcelWriter(excel, engine="openpyxl", mode="w") as w:
+            df.to_excel(w, sheet_name=str(SHEET) if isinstance(SHEET, int) else SHEET, index=True)
+        log(f"[OK] Fichier Excel créé : {excel}")
+        return
+
+    # 2) Si le fichier existe déjà → on le met à jour
+    update_excel_write_safe(excel, SHEET, ID_COL, updates)
+    log(f"Tableau mis à jour : {excel}")
 
 if __name__ == "__main__":
     main()

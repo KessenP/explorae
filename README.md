@@ -4,7 +4,7 @@ EXPLORAE computes, aggregates and exports multiple structural‑confidence, biop
 
 ---
 
-## METRICS TABLE (MANDATORY)
+## METRICS TABLE
 
 The table below lists the metrics produced by EXPLORAE, their units, source, and short meaning. The Excel output uses the column names shown in the table; units are reported in the table and are the canonical units for each metric.
 
@@ -20,7 +20,8 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
   - pTM: AlphaFold’s predicted TM (global confidence) as produced by the AlphaFold pipeline.
 - Statistical/physical/confidence-based:
   - ipSAE: confidence‑based (derived from predicted errors, empirical transform).
-  # EXPLORAE — petit guide (version simple)
+  
+  # EXPLORAE — petit guide 
 
   EXPLORAE aide à extraire des métriques d'interactions entre protéines depuis des résultats AlphaFold‑Multimer, puis à les mettre dans un fichier Excel/CSV. C'est fait pour regrouper rapidement des scores de confiance et d'énergie pour chaque interaction.
 
@@ -32,8 +33,6 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
   |--------|-------|--------|------|
   | ipSAE |  | AlphaFold (PAE → transform) | confiance sur l'interface |
   | pDockQ2 |  | AF + régression | score de qualité d'interface |
-  | ipTM |  | AlphaFold | ipTM (proxy) |
-  | pTM |  | AlphaFold | pTM (global) |
   | ipTM+pTM |  | AlphaFold | score combiné pour le classement |
   | PRODIGY Kd | M | PRODIGY | constante de dissociation prédite |
   | PRODIGY ΔG internal | kcal/mol | PRODIGY | énergie libre prédite (empirique) |
@@ -41,7 +40,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
   | Rosetta dSASA_int | Å² | Rosetta | surface enfouie (SASA) |
   | dG_SASA_ratio | REU/Å² | Rosetta | énergie normalisée par surface |
 
-  Les noms de colonnes écrits dans l'Excel sont : `ipsae`, `pdockq2`, `prodigy_kd`, `prodigy_dg_internal`, `dG_rosetta`, `dG_SASA_ratio`, `ipTM+pTM`, `pTM`.
+  Les noms de colonnes écrits dans l'Excel sont : `ipsae`, `pdockq2`, `prodigy_kd`, `prodigy_dg_internal`, `dG_rosetta`, `dG_SASA_ratio`, `ipTM+pTM`.
 
   ---
 
@@ -52,7 +51,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
   - pDockQ2 : combine pLDDT local (confiance) et PAE transformé puis passe par une fonction logistique (score empirique).
   - ipTM / pTM : mesures de type TM issues des sorties AlphaFold (ici on lit `ranking_debug.json` pour `iptm` et `iptm+ptm`).
 
-  Ces métriques sont basées sur la confiance / erreurs prédites par AlphaFold (donc pas des énergies physiques directes).
+  Ces métriques sont basées sur la confiance / erreurs prédites par AlphaFold.
 
   ### PRODIGY
   - PRODIGY calcule d'abord un `ΔG` empirique (appelé `ba_val`) via un modèle linéaire sur les contacts et la composition d'interface. Cette valeur est en kcal/mol.
@@ -78,12 +77,6 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
   source .venv/bin/activate
   pip install -r requirements.txt
 
-  # Optionnel : si tu veux les métriques Rosetta, installe PyRosetta 
-  ```
-
-  Remarques : PRODIGY direct (API) utilise `freesasa` et `biopython`. Si ces libs manquent, le script appellera le CLI `cli.py` et parsra la sortie.
-
-  ---
 
   ## Usage de base
 
@@ -95,7 +88,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
   - parcourt `./interactions` (un dossier par interaction),
   - lit `ranking_debug.json` pour retrouver le modèle top et ipTM/pTM,
   - calcule ipSAE / pDockQ2 via `ipsae.py` (fichiers de résumé),
-  - lance PRODIGY (API directe si possible, sinon CLI + parsing),
+  - lance PRODIGY ( CLI + parsing),
   - lance PyRosetta InterfaceAnalyzer si PyRosetta est installée,
   - met à jour l'Excel/CSV en ajoutant les colonnes (ou les crée si manquantes).
 
@@ -117,7 +110,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
 
   ---
 
-  ## Structure du dépôt (essentiel)
+  ## Structure du dépôt
 
   ```
   explorae/
@@ -132,7 +125,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
 
   ---
 
-  ## Exemple de sortie console (court)
+  ## Exemple de sortie console
 
   ```
   === INTERACTION_XYZ ===

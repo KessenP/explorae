@@ -512,16 +512,16 @@ def main():
             log(f"iptm : {debug_data['iptm']:.3e}")
         if dG_SASA_results["dG_norm"] is not None:
             log(f"dG_SASA_ratio (kJ/A): {dG_SASA_results['dG_norm']:.3e}")
-
-        # Calcul de ΔG_from_Kd si possible
+            
         dg_from_kd = None
         if kd_val is not None:
             try:
                 if kd_val > 0:
-                    R = 8.314
-                    T = 298.15
-                    dg_joule = -R * T * math.log(kd_val)
-                    dg_from_kd = dg_joule / 1000.0  # convertir en kJ/mol
+                    R = 8.314          # J/mol/K
+                    T = 298.15         # K (25 °C)
+                    # ΔG° = RT ln(Kd), en J/mol
+                    dg_joule = R * T * math.log(kd_val)
+                    dg_from_kd = dg_joule / 1000.0  # kJ/mol
                     log(f"ΔG_from_Kd (kJ/mol): {dg_from_kd:.3f}")
                 else:
                     log("[WARN] Kd non positive, saut du calcul de ΔG_from_Kd")

@@ -1,0 +1,16 @@
+pandas
+numpy
+matplotlib
+flask
+requests
+scipy
+json5
+openpyxl
+biopython
+freesasa
+prodigy-prot
+
+[dev]
+pytest
+black
+ruff

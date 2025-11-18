@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Optional, Dict, Tuple, List, Any
 import pandas as pd
 import argparse
-import math
 import io
 import contextlib
 import pyrosetta
@@ -30,10 +29,10 @@ COL_PDOCKQ2 = "pdockq2"
 COL_PRODIGY = "prodigy_kd"
 COL_IPTM_PTM = "ipTM+pTM"
 COL_PTM = "pTM"
-COL_REF2015 = "REF2015"
+# COL_REF2015 = "REF2015"
 COL_dG_SASA_ratio = "dG_SASA_ratio"
 COL_PRODIGY_DG_INTERNAL = "prodigy_dg_internal"
-COL_PRODIGY_DG_FROM_KD = "prodigy_dg_from_kd"
+COL_DG_ROSETTA = "dG_rosetta"
 
 
 def log(m: str) -> None:
@@ -304,7 +303,6 @@ def update_excel_write_safe(
         COL_PDOCKQ2,
         COL_PRODIGY,
         COL_PRODIGY_DG_INTERNAL,
-        COL_PRODIGY_DG_FROM_KD,
         COL_IPTM_PTM,
         COL_PTM,
         COL_dG_SASA_ratio,
@@ -391,17 +389,6 @@ def dico_to_csv(dataset: Dict[str, Dict[str, Any]], filepath: Path) -> None:
     df.to_csv(filepath, encoding="utf-8")
     log(f"[OK] Export CSV écrit: {filepath}")
 
-
-def calculate_ref2015_energy_terms(pdb_path: str) -> float:
-    """
-    Calculate REF2015 energy terms for a given PDB file.
-
-    ATTENTION: suppose que pyrosetta.init() a déjà été appelé.
-    """
-    pose = pose_from_pdb(pdb_path)
-    scorefxn = get_fa_scorefxn()  # REF2015
-    total_score = scorefxn(pose)
-    return total_score
 
 
 def analyze_interface(pdb_file: str, chains_partner1: str, chains_partner2: str) -> Dict[str, Optional[float]]:
@@ -512,28 +499,18 @@ def main():
             log(f"iptm : {debug_data['iptm']:.3e}")
         if dG_SASA_results["dG_norm"] is not None:
             log(f"dG_SASA_ratio (kJ/A): {dG_SASA_results['dG_norm']:.3e}")
-            
-        dg_from_kd = None
-        if kd_val is not None:
-            try:
-                if kd_val > 0:
-                    R = 8.314          # J/mol/K
-                    T = 298.15         # K (25 °C)
-                    # ΔG° = RT ln(Kd), en J/mol
-                    dg_joule = R * T * math.log(kd_val)
-                    dg_from_kd = dg_joule / 1000.0  # kJ/mol
-                    log(f"ΔG_from_Kd (kJ/mol): {dg_from_kd:.3f}")
-                else:
-                    log("[WARN] Kd non positive, saut du calcul de ΔG_from_Kd")
-            except Exception as e:
-                log(f"[WARN] Échec calcul ΔG_from_Kd: {e}")
+
+        # Récupération du dG Rosetta (dG_cross) déjà calculé par analyze_interface
+        dG_rosetta = dG_SASA_results.get("dG") if isinstance(dG_SASA_results, dict) else None
+        if dG_rosetta is not None:
+            log(f"dG Rosetta (dG_cross): {dG_rosetta}")
 
         updates[inter_id] = {
             COL_IPSAE: ipsae_val,
             COL_PDOCKQ2: pdq2_val,
             COL_PRODIGY: kd_val,
             COL_PRODIGY_DG_INTERNAL: dg_internal,
-            COL_PRODIGY_DG_FROM_KD: dg_from_kd,
+            COL_DG_ROSETTA: dG_rosetta,
             COL_IPTM_PTM: debug_data.get("iptm+ptm"),
             COL_PTM: debug_data.get("iptm"),
             COL_dG_SASA_ratio: dG_SASA_results["dG_norm"],

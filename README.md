@@ -21,10 +21,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
 - Statistical/physical/confidence-based:
   - ipSAE: confidence‑based (derived from predicted errors, empirical transform).
   
-  # EXPLORAE — petit guide 
-
-  EXPLORAE aide à extraire des métriques d'interactions entre protéines depuis des résultats AlphaFold‑Multimer, puis à les mettre dans un fichier Excel/CSV. C'est fait pour regrouper rapidement des scores de confiance et d'énergie pour chaque interaction.
-
+  
   ---
 
   ## Table des métriques (rapide)

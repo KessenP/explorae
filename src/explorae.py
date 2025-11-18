@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional, Dict, Tuple, List, Any
 import pandas as pd
 import argparse
+import math
 import io
 import contextlib
 import pyrosetta
@@ -31,6 +32,8 @@ COL_IPTM_PTM = "ipTM+pTM"
 COL_PTM = "pTM"
 COL_REF2015 = "REF2015"
 COL_dG_SASA_ratio = "dG_SASA_ratio"
+COL_PRODIGY_DG_INTERNAL = "prodigy_dg_internal"
+COL_PRODIGY_DG_FROM_KD = "prodigy_dg_from_kd"
 
 
 def log(m: str) -> None:
@@ -127,14 +130,38 @@ def run_ipsae(pae_pkl: Path, pdb: Path, workdir: Path) -> Tuple[Optional[float],
     return ipSAE, pDockQ2
 
 
-def run_prodigy(pdb_path: Path) -> Optional[float]:
+def run_prodigy(pdb_path: Path) -> Tuple[Optional[float], Optional[float]]:
     """
     Exécute le CLI local sur LE FICHIER PDB sélectionné.
     On passe --showall pour garantir l'impression du Kd.
+
+    Retourne (kd, dg_internal) :
+      - kd (float) en M ou None,
+      - dg_internal (float) tel que reporté par PRODIGY (unité dépend de la sortie) ou None.
     """
     if not pdb_path.exists():
         log(f"[WARN] PDB introuvable pour PRODIGY: {pdb_path}")
-        return None
+        return None, None
+
+
+    try:
+        from modules.parsers import parse_structure
+        from modules.prodigy import Prodigy
+
+        models, _, _ = parse_structure(str(pdb_path))
+        if models:
+            model = models[0]
+            prodigy = Prodigy(model=model, name=pdb_path.stem, temp=25.0)
+            prodigy.predict()
+            # prodigy.ba_val : predicted binding affinity (kcal/mol as per modules.prodigy)
+            # prodigy.kd_val : predicted dissociation constant (M)
+            kd = float(prodigy.kd_val) if getattr(prodigy, "kd_val", None) is not None else None
+            ba = float(prodigy.ba_val) if getattr(prodigy, "ba_val", None) is not None else None
+            return kd, ba
+    except Exception as e:
+        # Import or processing may fail if dependencies missing (freesasa, biopython...),
+        # on tombe alors sur le fallback qui appelle la CLI et parse la sortie.
+        log(f"[INFO] run_prodigy direct failed ({e}), falling back to CLI parsing")
 
     cmd = PRODIGY_CMD + [str(pdb_path)]
     try:
@@ -145,28 +172,48 @@ def run_prodigy(pdb_path: Path) -> Optional[float]:
         out = p.stdout + "\n" + p.stderr
     except subprocess.CalledProcessError as e:
         log(f"[WARN] PRODIGY a échoué sur {pdb_path.name}: {e}\nSTDOUT:\n{e.stdout}\nSTDERR:\n{e.stderr}")
-        return None
+        return None, None
 
-    # Parsers tolérants : "dissociation constant (M) at 25.0˚C: 1.23e-06"
-    patterns = [
+    # Parsers tolérants pour Kd
+    patterns_kd = [
         r"dissociation\s+constant.*?:\s*([0-9.+\-eE]+)",
         r"\bkd[_\s]*val\b[^0-9eE+\-]*([0-9.+\-eE]+)",
         r"\bKd\s*\(M\)\s*[:=]\s*([0-9.+\-eE]+)",
     ]
-    for pat in patterns:
+    kd_val = None
+    for pat in patterns_kd:
         m = re.search(pat, out, flags=re.IGNORECASE)
         if m:
             try:
-                return float(m.group(1))
+                kd_val = float(m.group(1))
+                break
             except Exception:
                 pass
 
-    head = "\n".join(out.splitlines()[:40])
-    log(
-        f"[INFO] Kd non détecté dans la sortie PRODIGY pour {pdb_path.name}. "
-        f"Extrait de sortie:\n{head}\n--- fin extrait ---"
-    )
-    return None
+    # Parsers tolérants pour le ΔG interne (reporté par PRODIGY)
+    dg_internal = None
+    # Cherche des motifs comme 'Delta G', 'ΔG', 'Binding energy', 'Binding affinity' avec un nombre et optionnellement une unité
+    dg_patterns = [
+        r"(?:ΔG|Delta\s*G|Binding\s+energy|Binding\s+affinity)[^0-9\-\+\.eE\n\r]{0,40}([+\-]?[0-9]*\.?[0-9]+(?:[eE][+\-]?\d+)?)(?:\s*(kcal|kJ|kj|kcal/mol|kJ/mol))?",
+        r"(?:binding\s+affinity)[^0-9\-\+\.eE\n\r]{0,40}([+\-]?[0-9]*\.?[0-9]+(?:[eE][+\-]?\d+)?)",
+    ]
+    for pat in dg_patterns:
+        m = re.search(pat, out, flags=re.IGNORECASE)
+        if m:
+            try:
+                dg_internal = float(m.group(1))
+                break
+            except Exception:
+                pass
+
+    if kd_val is None:
+        head = "\n".join(out.splitlines()[:40])
+        log(
+            f"[INFO] Kd non détecté dans la sortie PRODIGY pour {pdb_path.name}. "
+            f"Extrait de sortie:\n{head}\n--- fin extrait ---"
+        )
+
+    return kd_val, dg_internal
 
 def init_pyrosetta_quiet():
     """
@@ -252,7 +299,16 @@ def update_excel_write_safe(
         )
 
     # Colonnes métriques: crée si absentes
-    for c in (COL_IPSAE, COL_PDOCKQ2, COL_PRODIGY, COL_IPTM_PTM, COL_PTM, COL_dG_SASA_ratio):
+    for c in (
+        COL_IPSAE,
+        COL_PDOCKQ2,
+        COL_PRODIGY,
+        COL_PRODIGY_DG_INTERNAL,
+        COL_PRODIGY_DG_FROM_KD,
+        COL_IPTM_PTM,
+        COL_PTM,
+        COL_dG_SASA_ratio,
+    ):
         if c not in df.columns:
             df[c] = pd.NA
 
@@ -438,7 +494,7 @@ def main():
             continue
 
         ipsae_val, pdq2_val = run_ipsae(pkl, pdb, inter_dir)
-        kd_val = run_prodigy(pdb)
+        kd_val, dg_internal = run_prodigy(pdb)
 
         dG_SASA_results = analyze_interface(str(pdb), "B", "C")
 
@@ -448,6 +504,8 @@ def main():
             log(f"pDockQ2 : {pdq2_val:.6f}")
         if kd_val is not None:
             log(f"PRODIGY Kd (M): {kd_val:.3e}")
+        if dg_internal is not None:
+            log(f"PRODIGY ΔG internal : {dg_internal}")
         if debug_data.get("iptm+ptm") is not None:
             log(f"iptm+ptm: {debug_data['iptm+ptm']:.3e}")
         if debug_data.get("iptm") is not None:
@@ -455,10 +513,27 @@ def main():
         if dG_SASA_results["dG_norm"] is not None:
             log(f"dG_SASA_ratio (kJ/A): {dG_SASA_results['dG_norm']:.3e}")
 
+        # Calcul de ΔG_from_Kd si possible
+        dg_from_kd = None
+        if kd_val is not None:
+            try:
+                if kd_val > 0:
+                    R = 8.314
+                    T = 298.15
+                    dg_joule = -R * T * math.log(kd_val)
+                    dg_from_kd = dg_joule / 1000.0  # convertir en kJ/mol
+                    log(f"ΔG_from_Kd (kJ/mol): {dg_from_kd:.3f}")
+                else:
+                    log("[WARN] Kd non positive, saut du calcul de ΔG_from_Kd")
+            except Exception as e:
+                log(f"[WARN] Échec calcul ΔG_from_Kd: {e}")
+
         updates[inter_id] = {
             COL_IPSAE: ipsae_val,
             COL_PDOCKQ2: pdq2_val,
             COL_PRODIGY: kd_val,
+            COL_PRODIGY_DG_INTERNAL: dg_internal,
+            COL_PRODIGY_DG_FROM_KD: dg_from_kd,
             COL_IPTM_PTM: debug_data.get("iptm+ptm"),
             COL_PTM: debug_data.get("iptm"),
             COL_dG_SASA_ratio: dG_SASA_results["dG_norm"],
@@ -470,9 +545,9 @@ def main():
     if not excel.exists():
         csv_path = excel.with_suffix(".csv")
         dico_to_csv(updates, csv_path)
-        log(f"[OK] Aucune Excel trouvée, CSV créé : {csv_path}")
+        log(f"CSV créé : {csv_path}")
     else:
-        log("[OK] Excel mis à jour, aucun CSV créé.")
+        log("Tableau mis à jour")
 
 
 if __name__ == "__main__":

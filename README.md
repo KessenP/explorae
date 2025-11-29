@@ -112,7 +112,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
   │  ├─ ipsae.py       # calcule ipSAE, pDockQ2, etc.
   │  ├─ cli.py         # wrapper PRODIGY
   │  └─ modules/       # code utilitaire (prodigy, parsers, utils...)
-  ├─ interactions/     # mettes-y un dossier par interaction
+  ├─ interactions/     # y mettre un dossier par interaction
   └─ requirements.txt
   ```
 

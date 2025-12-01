@@ -9,9 +9,17 @@ import pandas as pd
 import argparse
 import io
 import contextlib
-import pyrosetta
-from pyrosetta import pose_from_pdb, get_fa_scorefxn
-from pyrosetta.rosetta.protocols.analysis import InterfaceAnalyzerMover
+
+# Import PyRosetta optionnel
+try:
+    import pyrosetta
+    from pyrosetta import pose_from_pdb, get_fa_scorefxn
+    from pyrosetta.rosetta.protocols.analysis import InterfaceAnalyzerMover
+    HAS_PYROSETTA = True
+except ImportError:
+    HAS_PYROSETTA = False
+    log_buffer = []  # Pour stocker les messages avant que log() soit défini
+    log_buffer.append("[WARN] PyRosetta non installé. Les métriques Rosetta (dG, dSASA) ne seront pas calculées.")
 
 
 # ---------- CONFIG MODIFIABLE ----------
@@ -136,7 +144,7 @@ def run_prodigy(pdb_path: Path) -> Tuple[Optional[float], Optional[float]]:
 
     Retourne (kd, dg_internal) :
       - kd (float) en M ou None,
-      - dg_internal (float) tel que reporté par PRODIGY (unité dépend de la sortie) ou None.
+      - dg_internal (float) ou None.
     """
     if not pdb_path.exists():
         log(f"[WARN] PDB introuvable pour PRODIGY: {pdb_path}")
@@ -217,10 +225,21 @@ def run_prodigy(pdb_path: Path) -> Tuple[Optional[float], Optional[float]]:
 def init_pyrosetta_quiet():
     """
     Initialise PyRosetta en silence (sans bannière ni logs C++).
+    Retourne True si succès, False sinon.
     """
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-        pyrosetta.init("-mute all")
+    if not HAS_PYROSETTA:
+        log("[INFO] PyRosetta non disponible, calculs Rosetta désactivés")
+        return False
+    
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            pyrosetta.init("-mute all")
+        log("[OK] PyRosetta initialisé")
+        return True
+    except Exception as e:
+        log(f"[ERROR] Échec initialisation PyRosetta: {e}")
+        return False
 
 def load_table_auto(path: Path, sheet):
     """
@@ -392,6 +411,39 @@ def dico_to_csv(dataset: Dict[str, Dict[str, Any]], filepath: Path) -> None:
 
 
 
+def detect_chains_from_pdb(pdb_file: str) -> Tuple[str, str]:
+    """
+    Détecte automatiquement les deux premières chaînes d'un fichier PDB.
+    
+    Arguments:
+        pdb_file (str): chemin vers le fichier PDB
+    
+    Retourne:
+        Tuple[str, str]: (chain1, chain2) - les deux premières chaînes trouvées
+    """
+    chains = set()
+    try:
+        with open(pdb_file, 'r') as f:
+            for line in f:
+                if line.startswith("ATOM") or line.startswith("HETATM"):
+                    chain_id = line[21].strip()
+                    if chain_id:
+                        chains.add(chain_id)
+                    if len(chains) >= 2:
+                        break
+        
+        if len(chains) < 2:
+            log(f"[WARN] Moins de 2 chaînes trouvées dans {pdb_file}, utilisation de B et C par défaut")
+            return "B", "C"
+        
+        chain_list = sorted(list(chains))
+        return chain_list[0], chain_list[1]
+    
+    except Exception as e:
+        log(f"[WARN] Erreur détection chaînes dans {pdb_file}: {e}, utilisation de B et C par défaut")
+        return "B", "C"
+
+
 def analyze_interface(pdb_file: str, chains_partner1: str, chains_partner2: str) -> Dict[str, Optional[float]]:
     """
     Analyse l'interface entre deux ensembles de chaînes dans un complexe.
@@ -404,27 +456,44 @@ def analyze_interface(pdb_file: str, chains_partner1: str, chains_partner2: str)
     Retourne :
         dict : métriques calculées (dSASA, dG, dG_norm)
     """
-    pose = pose_from_pdb(pdb_file)
+    if not HAS_PYROSETTA:
+        return {
+            "interface": f"{chains_partner1}_{chains_partner2}",
+            "dG": None,
+            "dSASA": None,
+            "dG_norm": None,
+        }
+    
+    try:
+        pose = pose_from_pdb(pdb_file)
 
-    # Format Rosetta attendu : "A_B" ou "AHL_CD"
-    interface_str = f"{chains_partner1}_{chains_partner2}"
+        # Format Rosetta attendu : "A_B" ou "AHL_CD"
+        interface_str = f"{chains_partner1}_{chains_partner2}"
 
-    iam = InterfaceAnalyzerMover(interface_str, False)
-    iam.apply(pose)
+        iam = InterfaceAnalyzerMover(interface_str, False)
+        iam.apply(pose)
 
-    scores = pose.scores
+        scores = pose.scores
 
-    dG = scores.get("dG_cross", None)
-    dSASA = scores.get("dSASA_int", None)
+        dG = scores.get("dG_cross", None)
+        dSASA = scores.get("dSASA_int", None)
 
-    dG_norm = dG / dSASA if (dG is not None and dSASA not in (0, None)) else None
+        dG_norm = dG / dSASA if (dG is not None and dSASA not in (0, None)) else None
 
-    return {
-        "interface": interface_str,
-        "dG": dG,
-        "dSASA": dSASA,
-        "dG_norm": dG_norm,
-    }
+        return {
+            "interface": interface_str,
+            "dG": dG,
+            "dSASA": dSASA,
+            "dG_norm": dG_norm,
+        }
+    except Exception as e:
+        log(f"[ERROR] Analyse Rosetta échouée pour {pdb_file}: {e}")
+        return {
+            "interface": f"{chains_partner1}_{chains_partner2}",
+            "dG": None,
+            "dSASA": None,
+            "dG_norm": None,
+        }
 
 
 def main():
@@ -454,8 +523,8 @@ def main():
     log(f"[INFO] PAE_CUTOFF   : {PAE_CUTOFF}")
     log(f"[INFO] DIST_CUTOFF  : {DIST_CUTOFF}")
 
-    # Initialisation PyRosetta
-    init_pyrosetta_quiet()
+    # Initialisation PyRosetta (optionnel)
+    has_rosetta = init_pyrosetta_quiet()
 
     updates: Dict[str, Dict[str, Optional[float]]] = {}
 
@@ -484,7 +553,9 @@ def main():
         ipsae_val, pdq2_val = run_ipsae(pkl, pdb, inter_dir)
         kd_val, dg_internal = run_prodigy(pdb)
 
-        dG_SASA_results = analyze_interface(str(pdb), "B", "C")
+        # Détection automatique des chaînes pour Rosetta
+        chain1, chain2 = detect_chains_from_pdb(str(pdb))
+        dG_SASA_results = analyze_interface(str(pdb), chain1, chain2)
 
         if ipsae_val is not None:
             log(f"ipSAE   : {ipsae_val:.6f}")
@@ -520,10 +591,14 @@ def main():
     if not excel.exists():
         log(f"[INFO] Fichier '{excel}' inexistant, création d'un nouveau tableau à partir des métriques.")
 
-        # Si l'utilisateur a donné un .csv → on écrit un CSV
+        # Si l'utilisateur a donné un .csv → on convertit en Excel avec même nom de base
         if excel.suffix.lower() == ".csv":
-            dico_to_csv(updates, excel)
-            log(f"[OK] CSV créé : {excel}")
+            excel_output = excel.with_suffix(".xlsx")
+            df = pd.DataFrame.from_dict(updates, orient="index")
+            df.index.name = ID_COL
+            with pd.ExcelWriter(excel_output, engine="openpyxl", mode="w") as w:
+                df.to_excel(w, sheet_name=str(SHEET) if isinstance(SHEET, int) else SHEET, index=True)
+            log(f"[OK] Fichier Excel créé : {excel_output} (converti depuis .csv)")
             return
 
         # Sinon → on crée un Excel
@@ -535,8 +610,19 @@ def main():
         return
 
     # 2) Si le fichier existe déjà → on le met à jour
-    update_excel_write_safe(excel, SHEET, ID_COL, updates)
-    log(f"Tableau mis à jour : {excel}")
+    # Si c'est un CSV, on le convertit en Excel
+    if excel.suffix.lower() == ".csv":
+        excel_output = excel.with_suffix(".xlsx")
+        log(f"[INFO] Conversion du CSV en Excel: {excel} -> {excel_output}")
+        update_excel_write_safe(excel, SHEET, ID_COL, updates)
+        # Après mise à jour, sauvegarder en Excel
+        df = load_table_auto(excel, SHEET)
+        with pd.ExcelWriter(excel_output, engine="openpyxl", mode="w") as w:
+            df.to_excel(w, sheet_name=str(SHEET) if isinstance(SHEET, int) else SHEET, index=False)
+        log(f"[OK] Fichier Excel mis à jour : {excel_output}")
+    else:
+        update_excel_write_safe(excel, SHEET, ID_COL, updates)
+        log(f"[OK] Tableau mis à jour : {excel}")
 
 if __name__ == "__main__":
     main()

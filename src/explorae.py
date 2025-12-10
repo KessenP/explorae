@@ -527,38 +527,38 @@ def main():
         run_af3(excel, root, SHEET, ID_COL, PAE_CUTOFF, DIST_CUTOFF)
         return
 
-    log(f"[INFO] Excel        : {excel}")
-    log(f"[INFO] Interactions : {root}")
-    log(f"[INFO] SHEET        : {SHEET}")
-    log(f"[INFO] ID_COL       : {ID_COL}")
-    log(f"[INFO] PAE_CUTOFF   : {PAE_CUTOFF}")
-    log(f"[INFO] DIST_CUTOFF  : {DIST_CUTOFF}")
-
+    # Collect directories
+    dirs = sorted([p for p in root.iterdir() if p.is_dir()])
+    total = len(dirs)
+    
     # Initialisation PyRosetta (optionnel)
     has_rosetta = init_pyrosetta_quiet()
+    
+    log("="*60)
+    log("Format: AF2")
+    log(f"PyRosetta: {'initialisé' if has_rosetta else 'non disponible'}")
+    log(f"Structures à traiter: {total}")
+    log("="*60)
 
     updates: Dict[str, Dict[str, Optional[float]]] = {}
 
-    for inter_dir in sorted([p for p in root.iterdir() if p.is_dir()]):
+    for idx, inter_dir in enumerate(dirs, 1):
         inter_id = inter_dir.name
-        log(f"\n=== {inter_id} ===")
+        # Progress bar
+        progress = int(50 * idx / total)
+        bar = "█" * progress + "░" * (50 - progress)
+        print(f"\r[{bar}] {idx}/{total}", end="", flush=True)
 
         debug_data = parse_debug_file(inter_dir)
         if not debug_data:
-            log("[WARN] ranking_debug.json absent ou sans 'order' -> skip")
             continue
 
         top = debug_data["model"]
         if not top:
-            log("[WARN] 'model' absent dans ranking_debug.json -> skip")
             continue
 
         pdb, pkl = expected_files(inter_dir, top)
         if not pdb.exists() or not pkl.exists():
-            log(
-                f"[WARN] Fichiers manquants pour {top}: "
-                f"pdb={pdb.exists()} pkl={pkl.exists()} -> skip"
-            )
             continue
 
         ipsae_val, pdq2_val = run_ipsae(pkl, pdb, inter_dir)
@@ -568,25 +568,8 @@ def main():
         chain1, chain2 = detect_chains_from_pdb(str(pdb))
         dG_SASA_results = analyze_interface(str(pdb), chain1, chain2)
 
-        if ipsae_val is not None:
-            log(f"ipSAE   : {ipsae_val:.6f}")
-        if pdq2_val is not None:
-            log(f"pDockQ2 : {pdq2_val:.6f}")
-        if kd_val is not None:
-            log(f"PRODIGY Kd (M): {kd_val:.3e}")
-        if dg_internal is not None:
-            log(f"PRODIGY ΔG internal : {dg_internal}")
-        if debug_data.get("iptm+ptm") is not None:
-            log(f"iptm+ptm: {debug_data['iptm+ptm']:.3e}")
-        if debug_data.get("iptm") is not None:
-            log(f"iptm : {debug_data['iptm']:.3e}")
-        if dG_SASA_results["dG_norm"] is not None:
-            log(f"dG_SASA_ratio (kJ/A): {dG_SASA_results['dG_norm']:.3e}")
-
         # Récupération du dG Rosetta (dG_cross) déjà calculé par analyze_interface
         dG_rosetta = dG_SASA_results.get("dG") if isinstance(dG_SASA_results, dict) else None
-        if dG_rosetta is not None:
-            log(f"dG Rosetta (dG_cross): {dG_rosetta}")
 
         updates[inter_id] = {
             COL_IPSAE: ipsae_val,
@@ -598,10 +581,10 @@ def main():
             COL_PTM: debug_data.get("iptm"),
             COL_dG_SASA_ratio: dG_SASA_results["dG_norm"],
         }
-
+    
+    print()  # New line after progress bar
     if not excel.exists():
-        log(f"[INFO] Fichier '{excel}' inexistant, création d'un nouveau tableau à partir des métriques.")
-
+        log("="*60)
         # Si l'utilisateur a donné un .csv → on convertit en Excel avec même nom de base
         if excel.suffix.lower() == ".csv":
             excel_output = excel.with_suffix(".xlsx")
@@ -609,7 +592,8 @@ def main():
             df.index.name = ID_COL
             with pd.ExcelWriter(excel_output, engine="openpyxl", mode="w") as w:
                 df.to_excel(w, sheet_name=str(SHEET) if isinstance(SHEET, int) else SHEET, index=True)
-            log(f"[OK] Fichier Excel créé : {excel_output} (converti depuis .csv)")
+            log(f"✓ Fichier Excel créé: {excel_output.resolve()}")
+            log("="*60)
             return
 
         # Sinon → on crée un Excel
@@ -617,23 +601,25 @@ def main():
         df.index.name = ID_COL
         with pd.ExcelWriter(excel, engine="openpyxl", mode="w") as w:
             df.to_excel(w, sheet_name=str(SHEET) if isinstance(SHEET, int) else SHEET, index=True)
-        log(f"[OK] Fichier Excel créé : {excel}")
+        log(f"✓ Fichier Excel créé: {excel.resolve()}")
+        log("="*60)
         return
 
     # 2) Si le fichier existe déjà → on le met à jour
     # Si c'est un CSV, on le convertit en Excel
+    log("="*60)
     if excel.suffix.lower() == ".csv":
         excel_output = excel.with_suffix(".xlsx")
-        log(f"[INFO] Conversion du CSV en Excel: {excel} -> {excel_output}")
         update_excel_write_safe(excel, SHEET, ID_COL, updates)
         # Après mise à jour, sauvegarder en Excel
         df = load_table_auto(excel, SHEET)
         with pd.ExcelWriter(excel_output, engine="openpyxl", mode="w") as w:
             df.to_excel(w, sheet_name=str(SHEET) if isinstance(SHEET, int) else SHEET, index=False)
-        log(f"[OK] Fichier Excel mis à jour : {excel_output}")
+        log(f"✓ Fichier Excel mis à jour: {excel_output.resolve()}")
     else:
         update_excel_write_safe(excel, SHEET, ID_COL, updates)
-        log(f"[OK] Tableau mis à jour : {excel}")
+        log(f"✓ Fichier Excel mis à jour: {excel.resolve()}")
+    log("="*60)
 
 if __name__ == "__main__":
     main()

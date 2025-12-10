@@ -261,12 +261,24 @@ def detect_chains_from_mmcif(cif_file: Path) -> Tuple[str, str]:
 
 
 def run_af3(excel: Path, interactions_root: Path, sheet, id_col: str, pae_cutoff: float, dist_cutoff: float) -> None:
-    log(f"[INFO] Mode AF3 activé")
     updates: Dict[str, Dict[str, Optional[float]]] = {}
-
-    for inter_dir in sorted([p for p in interactions_root.iterdir() if p.is_dir()]):
+    
+    # Collect directories
+    dirs = sorted([p for p in interactions_root.iterdir() if p.is_dir()])
+    total = len(dirs)
+    
+    log("="*60)
+    log("Format: AF3")
+    log("PyRosetta: désactivé (mmCIF non supporté)")
+    log(f"Structures à traiter: {total}")
+    log("="*60)
+    
+    for idx, inter_dir in enumerate(dirs, 1):
         inter_id = inter_dir.name
-        log(f"\n=== {inter_id} ===")
+        # Progress bar
+        progress = int(50 * idx / total)
+        bar = "█" * progress + "░" * (50 - progress)
+        print(f"\r[{bar}] {idx}/{total}", end="", flush=True)
 
         files = find_af3_files(inter_dir)
         if not files:
@@ -280,20 +292,6 @@ def run_af3(excel: Path, interactions_root: Path, sheet, id_col: str, pae_cutoff
         chain1, chain2 = detect_chains_from_mmcif(cif)
         dG_SASA_ratio = None
         dG_rosetta = None
-        log("[INFO] Rosetta désactivé pour AF3 (mmCIF non support direct)")
-
-        if ipsae_val is not None:
-            log(f"ipSAE   : {ipsae_val:.6f}")
-        if pdq2_val is not None:
-            log(f"pDockQ2 : {pdq2_val:.6f}")
-        if kd_val is not None:
-            log(f"PRODIGY Kd (M): {kd_val:.3e}")
-        if dg_internal is not None:
-            log(f"PRODIGY ΔG internal : {dg_internal}")
-        if conf_data.get("iptm+ptm") is not None:
-            log(f"ipTM+pTM (calc): {conf_data['iptm+ptm']:.4f}")
-        if conf_data.get("iptm") is not None:
-            log(f"ipTM : {conf_data['iptm']:.4f}")
 
         updates[inter_id] = {
             COL_IPSAE: ipsae_val,
@@ -305,27 +303,29 @@ def run_af3(excel: Path, interactions_root: Path, sheet, id_col: str, pae_cutoff
             COL_PTM: conf_data.get("iptm"),
             COL_dG_SASA_ratio: dG_SASA_ratio,
         }
-
+    
+    print()  # New line after progress bar
+    log("="*60)
     if not excel.exists():
-        log(f"[INFO] Fichier '{excel}' inexistant, création.")
         df = pd.DataFrame.from_dict(updates, orient="index")
         df.index.name = id_col
         with pd.ExcelWriter(excel, engine="openpyxl", mode="w") as w:
             df.to_excel(w, sheet_name=str(sheet) if isinstance(sheet, int) else sheet, index=True)
-        log(f"[OK] Fichier Excel créé : {excel}")
+        log(f"✓ Fichier Excel créé: {excel.resolve()}")
+        log("="*60)
         return
 
     if excel.suffix.lower() == ".csv":
         excel_output = excel.with_suffix(".xlsx")
-        log(f"[INFO] Conversion CSV->Excel: {excel} -> {excel_output}")
         update_excel_write_safe(excel, sheet, id_col, updates)
         df = load_table_auto(excel, sheet)
         with pd.ExcelWriter(excel_output, engine="openpyxl", mode="w") as w:
             df.to_excel(w, sheet_name=str(sheet) if isinstance(sheet, int) else sheet, index=False)
-        log(f"[OK] Fichier Excel mis à jour : {excel_output}")
+        log(f"✓ Fichier Excel mis à jour: {excel_output.resolve()}")
     else:
         update_excel_write_safe(excel, sheet, id_col, updates)
-        log(f"[OK] Tableau mis à jour : {excel}")
+        log(f"✓ Fichier Excel mis à jour: {excel.resolve()}")
+    log("="*60)
 
 
 __all__ = ["run_af3"]

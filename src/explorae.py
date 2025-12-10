@@ -400,6 +400,11 @@ def parse_args():
             "Use an integer index (0,1,2,...) or a sheet name like 'Sheet1'."
         )
     )
+    parser.add_argument(
+        "--af3",
+        action="store_true",
+        help="Active le mode AF3 (mmCIF + confidences.json + summary_confidences.json)"
+    )
     return parser.parse_args()
 
 
@@ -515,6 +520,12 @@ def main():
         SHEET = int(sheet_arg)
     else:
         SHEET = sheet_arg
+
+    if getattr(args, "af3", False):
+        from af3_handle import run_af3
+        log("[INFO] Bascule vers le workflow AF3")
+        run_af3(excel, root, SHEET, ID_COL, PAE_CUTOFF, DIST_CUTOFF)
+        return
 
     log(f"[INFO] Excel        : {excel}")
     log(f"[INFO] Interactions : {root}")

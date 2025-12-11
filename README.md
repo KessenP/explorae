@@ -57,7 +57,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
   - `dSASA_int` : surface enfouie (Å²) calculée par Rosetta.
   - `dG_SASA_ratio` : `dG_cross / dSASA_int` (REU/Å²), utile pour normaliser l'énergie par surface.
 
-  Ces valeurs viennent de Rosetta (score empirique, utile en comparaisons internes) — elles ne sont pas directement en kcal/mol.
+  Ces valeurs viennent de Rosetta (score empirique, utile en comparaisons internes)
 
   ---
 
@@ -68,7 +68,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
   cd explorae
   python3 -m venv .venv
   source .venv/bin/activate
-  pip install -r requirements.txt
+  ./install_explorae.sh
 
 
   ## Usage de base
@@ -82,7 +82,7 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
   - lit `ranking_debug.json` pour retrouver le modèle top et ipTM/pTM,
   - calcule ipSAE / pDockQ2 via `ipsae.py` (fichiers de résumé),
   - lance PRODIGY ( CLI + parsing),
-  - lance PyRosetta InterfaceAnalyzer si PyRosetta est installée,
+  - lance PyRosetta InterfaceAnalyze,
   - met à jour l'Excel/CSV en ajoutant les colonnes (ou les crée si manquantes).
 
   ---
@@ -98,38 +98,25 @@ The table below lists the metrics produced by EXPLORAE, their units, source, and
 
   Exemple :
   ```bash
-  python ./src/explorae.py master.xlsx ./interactions --pae 12 --dist 8 --id-col jobs --sheet 0
+  python ./src/explorae.py test.xlsx ./interactions --pae 12 --dist 8 --id-col jobs --sheet 0
   ```
 
   ---
-
-  ## Structure du dépôt
-
-  ```
-  explorae/
-  ├─ src/
-  │  ├─ explorae.py    # script principal
-  │  ├─ ipsae.py       # calcule ipSAE, pDockQ2, etc.
-  │  ├─ cli.py         # wrapper PRODIGY
-  │  └─ modules/       # code utilitaire (prodigy, parsers, utils...)
-  ├─ interactions/     # y mettre un dossier par interaction
-  └─ requirements.txt
-  ```
 
   ---
 
   ## Exemple de sortie console
 
   ```
-  === INTERACTION_XYZ ===
-  ipSAE   : 0.78
-  pDockQ2 : 0.41
-  PRODIGY Kd (M): 2.3e-07
-  PRODIGY ΔG internal : -8.9 kcal/mol
-  iptm+ptm: 1.10
-  pTM : 0.55
-  dG_SASA_ratio : -0.011 (REU/Å²)
-  dG Rosetta (dG_cross) : -38.5 REU
+=== A0A3Q7EZF3_SOLLC_and_RdRPL ===
+ipSAE   : 0.014296
+pDockQ2 : 0.079000
+PRODIGY Kd (M): 2.178e-07
+PRODIGY ΔG internal : -9.082449616519174
+iptm+ptm: 6.480e-01
+iptm : 6.440e-01
+dG_SASA_ratio (kJ/A): 2.069e+00
+dG Rosetta (dG_cross): 3342.93115234375
   ```
 
   ---
